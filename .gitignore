@@ -1,5 +1,7 @@
+.gradle/
+build/
+**/build/
 local.properties
+.idea/workspace.xml
 *.jks
 *.keystore
-.env
-secrets.properties
