@@ -40,7 +40,7 @@ fun HomeScreen(
     val fabColor = if (isDarkTheme) Color(0xFF1F7AE0) else Color(0xFF00A884)
 
     Column(modifier = Modifier.fillMaxSize().background(pageBg)) {
-        MainTopBar(title = "BlinkChat Test", isDarkTheme = isDarkTheme)
+        MainTopBar(title = "BlinkChat", isDarkTheme = isDarkTheme)
 
         Row(
             modifier = Modifier.fillMaxWidth().padding(12.dp),
