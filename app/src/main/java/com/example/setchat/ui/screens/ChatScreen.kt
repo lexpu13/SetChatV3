@@ -93,7 +93,7 @@ fun ChatScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(bottom = 8.dp)
         ) {
-            items(messages) { msg ->
+            items(messages, key = { it.id }) { msg ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = if (msg.isMine) Arrangement.End else Arrangement.Start

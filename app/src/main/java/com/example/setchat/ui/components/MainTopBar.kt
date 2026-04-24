@@ -26,7 +26,6 @@ fun MainTopBar(
     isDarkTheme: Boolean = true
 ) {
     val barColor = if (isDarkTheme) Color(0xFF1B4F8A) else Color(0xFF0B8F68)
-    val subtitleColor = if (isDarkTheme) Color(0xFFBFD8F8) else Color(0xFFD7F5EC)
 
     Row(
         modifier = Modifier
@@ -38,7 +37,6 @@ fun MainTopBar(
     ) {
         Column {
             Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 22.sp)
-            Text("messagerie de demonstration", color = subtitleColor)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.PhotoCamera, contentDescription = null, tint = Color.White)

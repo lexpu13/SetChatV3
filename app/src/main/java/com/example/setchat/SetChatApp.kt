@@ -304,7 +304,8 @@ fun SetChatApp() {
                         arguments = listOf(navArgument("conversationId") { type = NavType.LongType })
                     ) { backStackEntry ->
                         val conversationId = backStackEntry.arguments?.getLong("conversationId") ?: 0L
-                        val messages by vm.messages(conversationId).collectAsState()
+                        val messagesFlow = remember(conversationId) { vm.messages(conversationId) }
+                        val messages by messagesFlow.collectAsState()
                         val conversation = conversations.firstOrNull { it.id == conversationId }
 
                         LaunchedEffect(conversationId) { vm.openConversation(conversationId) }
