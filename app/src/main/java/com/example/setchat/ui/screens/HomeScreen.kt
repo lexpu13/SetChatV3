@@ -149,10 +149,10 @@ fun HomeScreen(
 
         Spacer(modifier = Modifier.height(10.dp))
         Text(
-            text = "Discussions",
+            text = "Conversations",
             color = titleColor,
             fontWeight = FontWeight.Bold,
-            fontSize = 40.sp
+            fontSize = 28.sp
         )
 
         Spacer(modifier = Modifier.height(4.dp))
@@ -175,7 +175,7 @@ fun HomeScreen(
                 androidx.compose.foundation.layout.Box(modifier = Modifier.weight(1f)) {
                     if (searchQuery.isBlank()) {
                         Text(
-                            text = "Demander à Meta AI ou rechercher",
+                            text = "Rechercher",
                             color = searchHint,
                             maxLines = 1
                         )

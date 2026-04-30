@@ -86,6 +86,7 @@ import com.example.setchat.viewmodel.FakeStatusBarSettings
 import com.example.setchat.viewmodel.NotificationConfig
 import coil.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 private enum class EditorTopSection {
@@ -97,6 +98,16 @@ private enum class EditorTopSection {
     GALLERY,
     NOTIFICATIONS
 }
+
+private data class NotificationVisualPreview(
+    val sender: Contact?,
+    val conversation: Conversation?,
+    val previewText: String,
+    val useProfilePhoto: Boolean,
+    val triggerKey: String,
+    val durationSeconds: Int,
+    val stamp: Long = System.currentTimeMillis()
+)
 
 @Composable
 fun EditorHubScreen(
@@ -747,6 +758,7 @@ fun DiscussionsEditorScreen(
 }
 
 @OptIn(ExperimentalLayoutApi::class)
+@Suppress("UNUSED_PARAMETER")
 @Composable
 fun NotificationsEditorScreen(
     notifications: List<NotificationConfig>,
@@ -767,7 +779,6 @@ fun NotificationsEditorScreen(
     onUpdateNotification: (Long, String, Long, Long, String, String, Int, Boolean, Int, String) -> Boolean,
     onDeleteNotification: (Long) -> Unit
 ) {
-    var editingId by remember { mutableStateOf<Long?>(null) }
     var label by remember { mutableStateOf("") }
     var messageText by remember { mutableStateOf("") }
     var selectedConversationId by remember { mutableStateOf(0L) }
@@ -778,6 +789,18 @@ fun NotificationsEditorScreen(
     var durationSeconds by remember { mutableStateOf(4f) }
     var triggerKey by remember { mutableStateOf("") }
     var feedback by remember { mutableStateOf("") }
+    var editNotificationId by remember { mutableStateOf<Long?>(null) }
+    var editLabel by remember { mutableStateOf("") }
+    var editMessageText by remember { mutableStateOf("") }
+    var editSelectedConversationId by remember { mutableStateOf(0L) }
+    var editSelectedSenderId by remember { mutableStateOf(0L) }
+    var editPreviewMode by remember { mutableStateOf("full") }
+    var editPreviewLength by remember { mutableStateOf(42f) }
+    var editUseProfilePhoto by remember { mutableStateOf(true) }
+    var editDurationSeconds by remember { mutableStateOf(4f) }
+    var editTriggerKey by remember { mutableStateOf("") }
+    var editFeedback by remember { mutableStateOf("") }
+    var visiblePreview by remember { mutableStateOf<NotificationVisualPreview?>(null) }
     val privateConversations = remember(conversations) { conversations.filter { it.type != "group" } }
     val groupConversations = remember(conversations) { conversations.filter { it.type == "group" } }
 
@@ -792,19 +815,7 @@ fun NotificationsEditorScreen(
         }
     }
 
-    val selectedConversation = conversations.firstOrNull { it.id == selectedConversationId }
-    val selectedSender = contacts.firstOrNull { it.id == selectedSenderId }
-    val previewText = remember(messageText, previewMode, previewLength) {
-        if (previewMode == "full") {
-            messageText
-        } else {
-            val max = previewLength.toInt().coerceIn(8, 200)
-            if (messageText.length <= max) messageText else messageText.take(max).trimEnd() + "..."
-        }
-    }
-
     val resetDraft: () -> Unit = {
-        editingId = null
         label = ""
         messageText = ""
         previewMode = "full"
@@ -814,6 +825,34 @@ fun NotificationsEditorScreen(
         triggerKey = ""
         selectedConversationId = conversations.firstOrNull()?.id ?: 0L
         selectedSenderId = contacts.firstOrNull()?.id ?: 0L
+    }
+    val closeEditDialog: () -> Unit = {
+        editNotificationId = null
+        editFeedback = ""
+    }
+    val openEditDialog: (NotificationConfig) -> Unit = { notif ->
+        editNotificationId = notif.id
+        editLabel = notif.label
+        editMessageText = notif.messageText
+        editSelectedConversationId = notif.conversationId
+        editSelectedSenderId = notif.senderContactId
+        editPreviewMode = notif.previewMode
+        editPreviewLength = notif.previewLength.toFloat()
+        editUseProfilePhoto = notif.useProfilePhoto
+        editDurationSeconds = notif.durationSeconds.toFloat()
+        editTriggerKey = notif.triggerKey
+        editFeedback = ""
+    }
+
+    val editSelectedConversation = conversations.firstOrNull { it.id == editSelectedConversationId }
+    val editSelectedSender = contacts.firstOrNull { it.id == editSelectedSenderId }
+
+    LaunchedEffect(visiblePreview?.stamp) {
+        val currentPreview = visiblePreview ?: return@LaunchedEffect
+        delay(currentPreview.durationSeconds.coerceIn(1, 30) * 1000L)
+        if (visiblePreview?.stamp == currentPreview.stamp) {
+            visiblePreview = null
+        }
     }
 
     Box(
@@ -835,170 +874,59 @@ fun NotificationsEditorScreen(
                     Button(onClick = onResetNotifications) {
                         Text("Reinitialiser la section")
                     }
-                    EditorTextField(
-                        value = label,
-                        onValueChange = { label = it },
-                        label = "Nom (optionnel)"
-                    )
-                    EditorTextField(
-                        value = messageText,
-                        onValueChange = { messageText = it },
-                        label = "Message notification"
-                    )
-                    EditorTextField(
-                        value = triggerKey,
-                        onValueChange = { triggerKey = it.take(1).lowercase() },
-                        label = "Touche clavier (1 caractere)"
-                    )
-
-                    Text("Discussion ouverte au clic")
-                    Text("Discussions privées", color = Color(0xFF667781), fontSize = 12.sp)
-                    if (privateConversations.isEmpty()) {
-                        Text("Aucune discussion privée.", color = Color(0xFF667781))
-                    } else {
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            privateConversations.forEach { conversation ->
-                                FilterChip(
-                                    selected = selectedConversationId == conversation.id,
-                                    onClick = { selectedConversationId = conversation.id },
-                                    label = { Text(conversation.title.ifBlank { "Privée ${conversation.id}" }) }
-                                )
-                            }
-                        }
-                    }
-                    Text("Groupes", color = Color(0xFF667781), fontSize = 12.sp)
-                    if (groupConversations.isEmpty()) {
-                        Text("Aucun groupe.", color = Color(0xFF667781))
-                    } else {
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            groupConversations.forEach { conversation ->
-                                FilterChip(
-                                    selected = selectedConversationId == conversation.id,
-                                    onClick = { selectedConversationId = conversation.id },
-                                    label = { Text(conversation.title.ifBlank { "Groupe ${conversation.id}" }) }
-                                )
-                            }
-                        }
-                    }
-
-                    Text("Expediteur")
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        contacts.forEach { contact ->
-                            FilterChip(
-                                selected = selectedSenderId == contact.id,
-                                onClick = { selectedSenderId = contact.id },
-                                label = { Text(contact.name) }
-                            )
-                        }
-                    }
-
-                    Text("Affichage du texte")
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = previewMode == "full",
-                            onClick = { previewMode = "full" },
-                            label = { Text("Message entier") }
-                        )
-                        FilterChip(
-                            selected = previewMode == "partial",
-                            onClick = { previewMode = "partial" },
-                            label = { Text("Partiel + ...") }
-                        )
-                    }
-                    if (previewMode == "partial") {
-                        Text("Longueur bulle ${previewLength.toInt()} caractères")
-                        Slider(
-                            value = previewLength,
-                            onValueChange = { previewLength = it },
-                            valueRange = 8f..200f
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Photo profil")
-                        Switch(
-                            checked = useProfilePhoto,
-                            onCheckedChange = { useProfilePhoto = it }
-                        )
-                    }
-
-                    Text("Durée affichage ${durationSeconds.toInt()}s")
-                    Slider(
-                        value = durationSeconds,
-                        onValueChange = { durationSeconds = it },
-                        valueRange = 1f..30f
+                    NotificationEditorFields(
+                        label = label,
+                        onLabelChange = { label = it },
+                        messageText = messageText,
+                        onMessageTextChange = { messageText = it },
+                        triggerKey = triggerKey,
+                        onTriggerKeyChange = { triggerKey = it.take(1).lowercase() },
+                        privateConversations = privateConversations,
+                        groupConversations = groupConversations,
+                        selectedConversationId = selectedConversationId,
+                        onSelectedConversationIdChange = { selectedConversationId = it },
+                        contacts = contacts,
+                        selectedSenderId = selectedSenderId,
+                        onSelectedSenderIdChange = { selectedSenderId = it },
+                        previewMode = previewMode,
+                        onPreviewModeChange = { previewMode = it },
+                        previewLength = previewLength,
+                        onPreviewLengthChange = { previewLength = it },
+                        useProfilePhoto = useProfilePhoto,
+                        onUseProfilePhotoChange = { useProfilePhoto = it },
+                        durationSeconds = durationSeconds,
+                        onDurationSecondsChange = { durationSeconds = it }
                     )
 
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
                             onClick = {
-                                if (editingId == null) {
-                                    val createdId = onCreateNotification(
-                                        label,
-                                        selectedConversationId,
-                                        selectedSenderId,
-                                        messageText,
-                                        previewMode,
-                                        previewLength.toInt(),
-                                        useProfilePhoto,
-                                        durationSeconds.toInt(),
-                                        triggerKey
-                                    )
-                                    if (createdId != null) {
-                                        editingId = createdId
-                                        feedback = "Notification creee."
-                                    } else {
-                                        feedback = "Impossible de creer: verifie discussion, expediteur, message et touche unique."
-                                    }
+                                val createdId = onCreateNotification(
+                                    label,
+                                    selectedConversationId,
+                                    selectedSenderId,
+                                    messageText,
+                                    previewMode,
+                                    previewLength.toInt(),
+                                    useProfilePhoto,
+                                    durationSeconds.toInt(),
+                                    triggerKey
+                                )
+                                if (createdId != null) {
+                                    feedback = "Notification creee."
+                                    resetDraft()
                                 } else {
-                                    val updated = onUpdateNotification(
-                                        editingId ?: 0L,
-                                        label,
-                                        selectedConversationId,
-                                        selectedSenderId,
-                                        messageText,
-                                        previewMode,
-                                        previewLength.toInt(),
-                                        useProfilePhoto,
-                                        durationSeconds.toInt(),
-                                        triggerKey
-                                    )
-                                    feedback = if (updated) {
-                                        "Notification modifiee."
-                                    } else {
-                                        "Impossible de modifier: touche deja utilisee ou champs invalides."
-                                    }
+                                    feedback = "Impossible de creer: verifie discussion, expediteur, message et touche unique."
                                 }
                             }
                         ) {
-                            Text(if (editingId == null) "Creer" else "Modifier")
+                            Text("Creer")
                         }
                         Button(onClick = {
                             resetDraft()
                             feedback = ""
                         }) {
-                            Text("Nouvelle notif")
-                        }
-                        if (editingId != null) {
-                            Button(
-                                onClick = {
-                                    val sent = onSendNotificationNow(editingId ?: 0L)
-                                    feedback = if (sent) "Notification envoyee." else "Impossible d'envoyer la notification."
-                                }
-                            ) {
-                                Text("Envoyer maintenant")
-                            }
-                            Button(onClick = {
-                                onDeleteNotification(editingId ?: 0L)
-                                resetDraft()
-                                feedback = "Notification supprimee."
-                            }) {
-                                Text("Supprimer")
-                            }
+                            Text("Effacer")
                         }
                     }
                     if (feedback.isNotBlank()) {
@@ -1008,39 +936,67 @@ fun NotificationsEditorScreen(
             }
             item {
                 SectionCard(
-                    title = "Notifications creees",
-                    subtitle = "Selectionne une notification pour la modifier."
+                    title = "Previsualisations",
+                    subtitle = "Chaque notification peut etre modifiee ou supprimee directement."
                 ) {
                     if (notifications.isEmpty()) {
-                        Text("Aucune notification.", color = Color(0xFF667781))
+                        Text("Aucune notification creee.", color = Color(0xFF667781))
                     } else {
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             notifications.forEach { notif ->
-                                FilterChip(
-                                    selected = editingId == notif.id,
-                                    onClick = {
-                                        editingId = notif.id
-                                        label = notif.label
-                                        messageText = notif.messageText
-                                        selectedConversationId = notif.conversationId
-                                        selectedSenderId = notif.senderContactId
-                                        previewMode = notif.previewMode
-                                        previewLength = notif.previewLength.toFloat()
-                                        useProfilePhoto = notif.useProfilePhoto
-                                        durationSeconds = notif.durationSeconds.toFloat()
-                                        triggerKey = notif.triggerKey
-                                        feedback = ""
-                                    },
-                                    label = {
-                                        val target = conversations.firstOrNull { it.id == notif.conversationId }
-                                        val targetPrefix = if (target?.type == "group") "G" else "P"
-                                        Text(
-                                            notif.label.ifBlank { "Notif ${notif.id}" } +
-                                                " (${notif.triggerKey.uppercase()} · $targetPrefix)"
-                                        )
+                                val notifConversation = conversations.firstOrNull { it.id == notif.conversationId }
+                                val notifSender = contacts.firstOrNull { it.id == notif.senderContactId }
+                                NotificationPreviewCard(
+                                    sender = notifSender,
+                                    conversation = notifConversation,
+                                    previewText = notificationPreviewText(
+                                        messageText = notif.messageText,
+                                        previewMode = notif.previewMode,
+                                        previewLength = notif.previewLength
+                                    ),
+                                    useProfilePhoto = notif.useProfilePhoto,
+                                    triggerKey = notif.triggerKey,
+                                    durationSeconds = notif.durationSeconds,
+                                    modifierButtons = {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.End
+                                        ) {
+                                            Button(
+                                                onClick = {
+                                                    visiblePreview = NotificationVisualPreview(
+                                                        sender = notifSender,
+                                                        conversation = notifConversation,
+                                                        previewText = notificationPreviewText(
+                                                            messageText = notif.messageText,
+                                                            previewMode = notif.previewMode,
+                                                            previewLength = notif.previewLength
+                                                        ),
+                                                        useProfilePhoto = notif.useProfilePhoto,
+                                                        triggerKey = notif.triggerKey,
+                                                        durationSeconds = notif.durationSeconds
+                                                    )
+                                                },
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEAF2FF), contentColor = Color(0xFF12324A))
+                                            ) {
+                                                Text("Afficher la notification")
+                                            }
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Button(onClick = { openEditDialog(notif) }) {
+                                                Text("Modifier")
+                                            }
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Button(
+                                                onClick = {
+                                                    onDeleteNotification(notif.id)
+                                                    feedback = "Notification supprimee."
+                                                    if (editNotificationId == notif.id) closeEditDialog()
+                                                },
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEDEFF2), contentColor = Color(0xFF23313F))
+                                            ) {
+                                                Text("Supprimer")
+                                            }
+                                        }
                                     }
                                 )
                             }
@@ -1048,62 +1004,110 @@ fun NotificationsEditorScreen(
                     }
                 }
             }
-            if (notifications.isNotEmpty()) {
-                item {
-                    SectionCard(
-                        title = "Previsualisation",
-                        subtitle = "Apercu en direct de la notification telle qu'elle s'affichera."
+        }
+        visiblePreview?.let { preview ->
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 92.dp, start = 16.dp, end = 16.dp)
+                    .zIndex(3f)
+            ) {
+                NotificationToastPreview(preview = preview)
+            }
+        }
+        if (editNotificationId != null) {
+            Dialog(onDismissRequest = closeEditDialog) {
+                Surface(
+                    shape = RoundedCornerShape(22.dp),
+                    color = Color.White,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .padding(16.dp)
+                            .heightIn(max = 680.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Surface(
-                            color = Color(0xFF1B2430),
-                            shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier.fillMaxWidth()
+                        Text(
+                            text = "Modifier la notification",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 20.sp,
+                            color = Color(0xFF102338)
+                        )
+                        NotificationEditorFields(
+                            label = editLabel,
+                            onLabelChange = { editLabel = it },
+                            messageText = editMessageText,
+                            onMessageTextChange = { editMessageText = it },
+                            triggerKey = editTriggerKey,
+                            onTriggerKeyChange = { editTriggerKey = it.take(1).lowercase() },
+                            privateConversations = privateConversations,
+                            groupConversations = groupConversations,
+                            selectedConversationId = editSelectedConversationId,
+                            onSelectedConversationIdChange = { editSelectedConversationId = it },
+                            contacts = contacts,
+                            selectedSenderId = editSelectedSenderId,
+                            onSelectedSenderIdChange = { editSelectedSenderId = it },
+                            previewMode = editPreviewMode,
+                            onPreviewModeChange = { editPreviewMode = it },
+                            previewLength = editPreviewLength,
+                            onPreviewLengthChange = { editPreviewLength = it },
+                            useProfilePhoto = editUseProfilePhoto,
+                            onUseProfilePhotoChange = { editUseProfilePhoto = it },
+                            durationSeconds = editDurationSeconds,
+                            onDurationSecondsChange = { editDurationSeconds = it }
+                        )
+                        NotificationPreviewCard(
+                            sender = editSelectedSender,
+                            conversation = editSelectedConversation,
+                            previewText = notificationPreviewText(
+                                messageText = editMessageText,
+                                previewMode = editPreviewMode,
+                                previewLength = editPreviewLength.toInt()
+                            ),
+                            useProfilePhoto = editUseProfilePhoto,
+                            triggerKey = editTriggerKey,
+                            durationSeconds = editDurationSeconds.toInt(),
+                            modifierButtons = null
+                        )
+                        if (editFeedback.isNotBlank()) {
+                            Text(editFeedback, color = Color(0xFF5E6B78), fontSize = 12.sp)
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                            Button(
+                                onClick = closeEditDialog,
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEDEFF2), contentColor = Color(0xFF23313F))
                             ) {
-                                if (useProfilePhoto && selectedSender?.avatarUri?.isNotBlank() == true) {
-                                    AvatarCircle(
-                                        label = selectedSender.avatarText.ifBlank { selectedSender.name.take(1).uppercase() },
-                                        imageUri = selectedSender.avatarUri,
-                                        size = 32.dp
+                                Text("Fermer")
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Button(
+                                onClick = {
+                                    val updated = onUpdateNotification(
+                                        editNotificationId ?: 0L,
+                                        editLabel,
+                                        editSelectedConversationId,
+                                        editSelectedSenderId,
+                                        editMessageText,
+                                        editPreviewMode,
+                                        editPreviewLength.toInt(),
+                                        editUseProfilePhoto,
+                                        editDurationSeconds.toInt(),
+                                        editTriggerKey
                                     )
-                                } else {
-                                    Surface(
-                                        shape = RoundedCornerShape(10.dp),
-                                        color = Color(0x332D8CFF),
-                                        modifier = Modifier.size(32.dp)
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Icon(Icons.Default.Chat, contentDescription = null, tint = Color(0xFF2D8CFF))
-                                        }
+                                    if (updated) {
+                                        feedback = "Notification modifiee."
+                                        closeEditDialog()
+                                    } else {
+                                        editFeedback = "Impossible de modifier: touche deja utilisee ou champs invalides."
                                     }
                                 }
-                                Column(
-                                    modifier = Modifier
-                                        .padding(start = 10.dp)
-                                        .weight(1f),
-                                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                                ) {
-                                    Text(
-                                        text = selectedSender?.name ?: "Expediteur",
-                                        color = Color(0xFFE8F0FF),
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 13.sp
-                                    )
-                                    Text(
-                                        text = previewText.ifBlank { "Message de notification" },
-                                        color = Color(0xFFD5DFEE),
-                                        fontSize = 13.sp,
-                                        maxLines = if (previewMode == "full") 3 else 1
-                                    )
-                                    Text(
-                                        text = "Touche ${triggerKey.ifBlank { "?" }.uppercase()} · ${durationSeconds.toInt()}s · ${(if (selectedConversation?.type == "group") "Groupe" else "Privée")} · ${selectedConversation?.title ?: "Discussion"}",
-                                        color = Color(0xFF9CB2CC),
-                                        fontSize = 11.sp
-                                    )
-                                }
+                            ) {
+                                Text("Valider les modifications")
                             }
                         }
                     }
@@ -1122,6 +1126,265 @@ fun NotificationsEditorScreen(
             onOpenGallery = onOpenGallery,
             onOpenNotifications = onOpenNotifications
         )
+    }
+}
+
+private fun notificationPreviewText(
+    messageText: String,
+    previewMode: String,
+    previewLength: Int
+): String {
+    if (previewMode == "full") return messageText
+    val max = previewLength.coerceIn(8, 200)
+    return if (messageText.length <= max) messageText else messageText.take(max).trimEnd() + "..."
+}
+
+@Composable
+private fun NotificationEditorFields(
+    label: String,
+    onLabelChange: (String) -> Unit,
+    messageText: String,
+    onMessageTextChange: (String) -> Unit,
+    triggerKey: String,
+    onTriggerKeyChange: (String) -> Unit,
+    privateConversations: List<Conversation>,
+    groupConversations: List<Conversation>,
+    selectedConversationId: Long,
+    onSelectedConversationIdChange: (Long) -> Unit,
+    contacts: List<Contact>,
+    selectedSenderId: Long,
+    onSelectedSenderIdChange: (Long) -> Unit,
+    previewMode: String,
+    onPreviewModeChange: (String) -> Unit,
+    previewLength: Float,
+    onPreviewLengthChange: (Float) -> Unit,
+    useProfilePhoto: Boolean,
+    onUseProfilePhotoChange: (Boolean) -> Unit,
+    durationSeconds: Float,
+    onDurationSecondsChange: (Float) -> Unit
+) {
+    EditorTextField(
+        value = label,
+        onValueChange = onLabelChange,
+        label = "Nom (optionnel)"
+    )
+    EditorTextField(
+        value = messageText,
+        onValueChange = onMessageTextChange,
+        label = "Message notification"
+    )
+    EditorTextField(
+        value = triggerKey,
+        onValueChange = onTriggerKeyChange,
+        label = "Touche clavier (1 caractere)"
+    )
+
+    Text("Discussion ouverte au clic")
+    Text("Discussions privées", color = Color(0xFF667781), fontSize = 12.sp)
+    if (privateConversations.isEmpty()) {
+        Text("Aucune discussion privée.", color = Color(0xFF667781))
+    } else {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            privateConversations.forEach { conversation ->
+                FilterChip(
+                    selected = selectedConversationId == conversation.id,
+                    onClick = { onSelectedConversationIdChange(conversation.id) },
+                    label = { Text(conversation.title.ifBlank { "Privée ${conversation.id}" }) }
+                )
+            }
+        }
+    }
+    Text("Groupes", color = Color(0xFF667781), fontSize = 12.sp)
+    if (groupConversations.isEmpty()) {
+        Text("Aucun groupe.", color = Color(0xFF667781))
+    } else {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            groupConversations.forEach { conversation ->
+                FilterChip(
+                    selected = selectedConversationId == conversation.id,
+                    onClick = { onSelectedConversationIdChange(conversation.id) },
+                    label = { Text(conversation.title.ifBlank { "Groupe ${conversation.id}" }) }
+                )
+            }
+        }
+    }
+
+    Text("Expediteur")
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        contacts.forEach { contact ->
+            FilterChip(
+                selected = selectedSenderId == contact.id,
+                onClick = { onSelectedSenderIdChange(contact.id) },
+                label = { Text(contact.name) }
+            )
+        }
+    }
+
+    Text("Affichage du texte")
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(
+            selected = previewMode == "full",
+            onClick = { onPreviewModeChange("full") },
+            label = { Text("Message entier") }
+        )
+        FilterChip(
+            selected = previewMode == "partial",
+            onClick = { onPreviewModeChange("partial") },
+            label = { Text("Partiel + ...") }
+        )
+    }
+    if (previewMode == "partial") {
+        Text("Longueur bulle ${previewLength.toInt()} caractères")
+        Slider(
+            value = previewLength,
+            onValueChange = onPreviewLengthChange,
+            valueRange = 8f..200f
+        )
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("Photo profil")
+        Switch(
+            checked = useProfilePhoto,
+            onCheckedChange = onUseProfilePhotoChange
+        )
+    }
+
+    Text("Durée affichage ${durationSeconds.toInt()}s")
+    Slider(
+        value = durationSeconds,
+        onValueChange = onDurationSecondsChange,
+        valueRange = 1f..30f
+    )
+}
+
+@Composable
+private fun NotificationPreviewCard(
+    sender: Contact?,
+    conversation: Conversation?,
+    previewText: String,
+    useProfilePhoto: Boolean,
+    triggerKey: String,
+    durationSeconds: Int,
+    modifierButtons: (@Composable () -> Unit)?
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Surface(
+            color = Color(0xFF1B2430),
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (useProfilePhoto && sender?.avatarUri?.isNotBlank() == true) {
+                    AvatarCircle(
+                        label = sender.avatarText.ifBlank { sender.name.take(1).uppercase() },
+                        imageUri = sender.avatarUri,
+                        size = 32.dp
+                    )
+                } else {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0x332D8CFF),
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Chat, contentDescription = null, tint = Color(0xFF2D8CFF))
+                        }
+                    }
+                }
+                Column(
+                    modifier = Modifier
+                        .padding(start = 10.dp)
+                        .weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = sender?.name ?: "Expediteur",
+                        color = Color(0xFFE8F0FF),
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp
+                    )
+                    Text(
+                        text = previewText.ifBlank { "Message de notification" },
+                        color = Color(0xFFD5DFEE),
+                        fontSize = 13.sp,
+                        maxLines = 3
+                    )
+                    Text(
+                        text = "Touche ${triggerKey.ifBlank { "?" }.uppercase()} · ${durationSeconds}s · ${(if (conversation?.type == "group") "Groupe" else "Privée")} · ${conversation?.title ?: "Discussion"}",
+                        color = Color(0xFF9CB2CC),
+                        fontSize = 11.sp
+                    )
+                }
+            }
+        }
+        modifierButtons?.invoke()
+    }
+}
+
+@Composable
+private fun NotificationToastPreview(
+    preview: NotificationVisualPreview
+) {
+    Surface(
+        color = Color(0xFF1B2430),
+        shape = RoundedCornerShape(18.dp),
+        shadowElevation = 10.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (preview.useProfilePhoto && preview.sender?.avatarUri?.isNotBlank() == true) {
+                AvatarCircle(
+                    label = preview.sender.avatarText.ifBlank { preview.sender.name.take(1).uppercase() },
+                    imageUri = preview.sender.avatarUri,
+                    size = 38.dp
+                )
+            } else {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0x332D8CFF),
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.Chat, contentDescription = null, tint = Color(0xFF2D8CFF))
+                    }
+                }
+            }
+            Column(
+                modifier = Modifier
+                    .padding(start = 12.dp)
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = preview.sender?.name ?: "Expediteur",
+                    color = Color(0xFFE8F0FF),
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp
+                )
+                Text(
+                    text = preview.previewText.ifBlank { "Message de notification" },
+                    color = Color(0xFFD5DFEE),
+                    fontSize = 13.sp,
+                    maxLines = 2
+                )
+                Text(
+                    text = "${preview.conversation?.title ?: "Discussion"} · ${preview.durationSeconds}s · ${preview.triggerKey.ifBlank { "?" }.uppercase()}",
+                    color = Color(0xFF9CB2CC),
+                    fontSize = 11.sp
+                )
+            }
+        }
     }
 }
 
